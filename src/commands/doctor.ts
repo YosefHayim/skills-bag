@@ -9,6 +9,7 @@
 
 import { existsSync } from "node:fs";
 
+import { detectAgents } from "../core/agents.js";
 import { fromEnvMap } from "../core/env-config.js";
 import { FEATURES } from "../core/features.js";
 import { readManifest } from "../core/manifest.js";
@@ -22,10 +23,15 @@ const ok = (t: string): string => `${c.green("✓")} ${t}`;
 const bad = (t: string): string => `${c.yellow("⚠")} ${t}`;
 
 function hostBlock(): string {
+  const installed = detectAgents().filter((a) => a.installed);
+  const agents = installed.length
+    ? installed.map((a) => (a.supported ? a.name : `${a.name} ${c.dim("(#5)")}`)).join(", ")
+    : "none detected";
   return [
     nodeMajor() >= 20 ? ok(`Node ${process.versions.node}`) : bad(`Node ${process.versions.node} (needs >= 20)`),
     isMacOS() ? ok(`Platform ${process.platform}`) : bad(`Platform ${process.platform} (autorun/TTS are macOS-only)`),
     ghosttyAvailable() ? ok("Ghostty detected") : bad("Ghostty not detected (autorun needs it)"),
+    c.dim(`Agents: ${agents}`),
   ].join("\n");
 }
 

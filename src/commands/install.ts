@@ -12,6 +12,7 @@
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 
+import { detectAgents } from "../core/agents.js";
 import { DEFAULTS, toEnvMap } from "../core/env-config.js";
 import { ALL_FEATURES, DEFAULT_FEATURES, FEATURES, resolveFeatures, skillsFor } from "../core/features.js";
 import {
@@ -25,7 +26,14 @@ import {
 } from "../core/fs-utils.js";
 import { writeManifest, type Manifest } from "../core/manifest.js";
 import { hookCommand, resolveLayout, type Layout } from "../core/paths.js";
-import { platformBlocker, nodeMajor } from "../core/platform.js";
+import {
+  ghosttyAvailable,
+  homebrewAvailable,
+  installGhosttyViaBrew,
+  isMacOS,
+  nodeMajor,
+  platformBlocker,
+} from "../core/platform.js";
 import {
   backupSettings,
   detectLegacyHooks,
@@ -36,7 +44,7 @@ import {
   writeSettings,
   type RenderedHook,
 } from "../core/settings.js";
-import { c, confirm, intro, multiselect, note, outro, spinner, step, warn } from "../core/ui.js";
+import { c, confirm, intro, multiselect, note, outro, spinner, step, success, warn } from "../core/ui.js";
 import type { FeatureId, Scope } from "../core/types.js";
 
 export interface InstallOptions {
@@ -59,6 +67,57 @@ function renderHooks(layout: Layout, features: FeatureId[]): RenderedHook[] {
   return features.flatMap((id) =>
     FEATURES[id].hooks.map((h) => ({ event: h.event, matcher: h.matcher, command: hookCommand(layout, h.file) })),
   );
+}
+
+/**
+ * Render a note of the AI coding agents detected on this host. Claude Code is
+ * the install target; a detected Cursor/Codex is shown but flagged as not yet
+ * wired (issue #5) so the user knows skills-bag saw it and why it's untouched.
+ */
+function agentsNote(): string {
+  const shown = detectAgents().filter((a) => a.installed || a.supported);
+  return shown
+    .map((a) => {
+      const mark = a.supported ? c.green("✓") : c.dim("•");
+      const tag = a.supported ? c.green("install target") : c.dim("detected · adapter tracked in #5");
+      return `${mark} ${c.bold(a.name)} ${c.dim("—")} ${tag}`;
+    })
+    .join("\n");
+}
+
+/**
+ * When the autonomous loop is selected on macOS without Ghostty, offer to
+ * install it via Homebrew — the loop can drive no other terminal. Declining is
+ * fine: the loop still installs but stays inert, and context-guard works
+ * regardless. Returns true when it has already messaged about the loop's
+ * readiness, so the generic preflight warning can skip it and not double up.
+ */
+async function ensureGhostty(features: FeatureId[], opts: InstallOptions): Promise<boolean> {
+  if (!features.includes("autonomous-loop") || !isMacOS() || ghosttyAvailable()) return false;
+
+  const interactive = !opts.assumeYes && process.stdin.isTTY;
+  if (interactive && homebrewAvailable()) {
+    const go = await confirm("Ghostty isn't installed — install it now with Homebrew? (required for /autorun)", true, false);
+    if (go) {
+      step("Installing Ghostty via Homebrew — this can take a minute…");
+      try {
+        installGhosttyViaBrew();
+        success("Ghostty installed.");
+      } catch {
+        warn("Homebrew couldn't finish installing Ghostty — install it from https://ghostty.org. /autorun stays inert until then.");
+      }
+    } else {
+      warn("Skipping Ghostty — /autorun installs but can't run without it. context-guard still works everywhere.");
+    }
+    return true;
+  }
+
+  warn(
+    homebrewAvailable()
+      ? "Ghostty not detected — run `brew install --cask ghostty` to use /autorun. context-guard works regardless."
+      : "Ghostty not detected — install it from https://ghostty.org to use /autorun. context-guard works regardless.",
+  );
+  return true;
 }
 
 /**
@@ -88,13 +147,19 @@ export async function install(opts: InstallOptions): Promise<void> {
 
   intro(`skills-bag ${version()} · ${opts.isUpdate ? "update" : "install"} · ${opts.scope}`);
   step(c.dim(`target: ${layout.claudeDir}`));
+  note(agentsNote(), "Agents detected");
 
   const features = await chooseFeatures(opts, prior?.features);
   const skills = skillsFor(features);
 
+  // Bootstrap Ghostty for the autonomous loop before preflight, so a successful
+  // install means the generic platform warning below has nothing left to flag.
+  const ghosttyHandled = await ensureGhostty(features, opts);
+
   // Preflight — warn (never hard-fail) on unmet platform constraints.
   if (nodeMajor() < 20) warn(`Node ${process.versions.node} detected; skills-bag needs Node >= 20.`);
   for (const id of features) {
+    if (id === "autonomous-loop" && ghosttyHandled) continue;
     const blocker = platformBlocker(FEATURES[id].platform);
     if (blocker) warn(`${c.bold(FEATURES[id].title)} ${blocker} — installs but stays inert until satisfied.`);
   }

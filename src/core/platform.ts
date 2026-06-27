@@ -35,3 +35,22 @@ export function platformBlocker(platform: "any" | "macos" | "macos+ghostty"): st
   if (platform === "macos+ghostty" && !ghosttyAvailable()) return "requires the Ghostty terminal (not detected)";
   return null;
 }
+
+/** Whether Homebrew is on PATH, so we can offer to install Ghostty for the user. */
+export function homebrewAvailable(): boolean {
+  try {
+    execFileSync("which", ["brew"], { stdio: "ignore" });
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Install Ghostty via Homebrew. Output is inherited so the user watches brew's
+ * progress; throws if brew exits non-zero so the caller can fall back to a
+ * manual-install hint rather than silently claiming success.
+ */
+export function installGhosttyViaBrew(): void {
+  execFileSync("brew", ["install", "--cask", "ghostty"], { stdio: "inherit" });
+}

@@ -41,6 +41,40 @@ After installing, **restart Claude Code** (or start a new session) so the hooks 
 
 Requirements: **Node ≥ 20**. The autonomous loop additionally needs **macOS + Ghostty**; `speak-response` needs **macOS**. `skills-bag doctor` tells you what's satisfied.
 
+### Interactive setup
+
+Run `npx skills-bag install` with no flags and it walks you through a short, animated TUI:
+
+```text
+┌   skills-bag · install · global
+│
+◇  Agents detected ─────────────────────────────╮
+│  ✓ Claude Code — install target                │
+│  • Cursor — detected · adapter tracked in #5   │
+│  • Codex — detected · adapter tracked in #5    │
+├───────────────────────────────────────────────╯
+│
+◆  Which features do you want to install?
+│  ◼ context-guard    (any OS)
+│  ◻ autonomous-loop  (macos+ghostty)
+│  ◻ speak-response   (macos)
+└
+```
+
+1. **Agent detection.** skills-bag scans your machine for installed coding agents. **Claude Code** is the install target today; a detected **Cursor** or **Codex** is listed too, but skills-bag leaves them untouched for now — adapters are tracked in [#5](https://github.com/YosefHayim/skills-bag/issues/5).
+2. **Feature pick.** Choose what to install — `context-guard` is preselected as the safe default.
+3. **Ghostty bootstrap.** If you pick the **autonomous loop** on macOS and Ghostty isn't installed, skills-bag offers to install it for you (the loop can drive no other terminal):
+
+   ```text
+   ◆  Ghostty isn't installed — install it now with Homebrew? (required for /autorun)
+   │  ●  Yes   ○  No
+   ```
+
+   - **Yes** → runs `brew install --cask ghostty`, then continues.
+   - **No** → the loop still installs but stays **inert**: `/autorun` can't run without Ghostty, while `context-guard` keeps working everywhere. (No Homebrew on PATH? It prints the manual install link instead of offering.)
+
+`skills-bag doctor` reports the same host + agent detection any time, read-only.
+
 ## Configure
 
 All tunables live as `SKILLS_BAG_*` environment variables in your `settings.json` — one source of truth shared by the guard and the daemon, so thresholds can't drift.
